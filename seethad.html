@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>การ์ตูน 3D Interactive - ตัวละครเดินได้ | Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(8px);
+            color: #ffefc0;
+            padding: 10px 20px;
+            border-radius: 40px;
+            pointer-events: none;
+            z-index: 10;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            border-left: 5px solid #ffaa44;
+            font-size: 1rem;
+        }
+        #controls-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(30,30,40,0.8);
+            backdrop-filter: blur(8px);
+            padding: 8px 16px;
+            border-radius: 50px;
+            color: white;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 10;
+            font-family: monospace;
+            letter-spacing: 1px;
+        }
+        @media (max-width: 600px) {
+            #info { font-size: 12px; top: 12px; left: 12px; }
+            #controls-panel { font-size: 10px; }
+        }
+        .instruction {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.5);
+            color: #ddd;
+            padding: 5px 12px;
+            border-radius: 30px;
+            font-size: 12px;
+            pointer-events: none;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        🧸 การ์ตูน 3D · ตัวละครเดินอัตโนมัติ 🚶
+    </div>
+    <div id="controls-panel">
+        🎮 ลากเมาส์เพื่อหมุนกล้อง | ตัวละครเดินไป-มาพร้อมขยับแขนขา
+    </div>
+    <div class="instruction">
+        ✨ แอนิเมชันเดิน + กระดิกตัวน่ารัก ✨
+    </div>
+
+    <!-- โหลด Three.js core และส่วนเสริม -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // --- ตั้งค่า Scene, Camera, Renderers ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x8ec9e0); // สีฟ้าสดใส
+        scene.fog = new THREE.FogExp2(0x8ec9e0, 0.008); // เพิ่มความลึก
+
+        // กล้อง Perspective (มุมกว้าง สำหรับดูการเดิน)
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(12, 8, 15);
+        camera.lookAt(0, 0, 0);
+
+        // WebGL Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // เปิดเงา
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // CSS2DRenderer สำหรับข้อความลอย (ชื่อน่ารัก)
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
+
+        // --- Controls ให้ผู้ใช้หมุน/ซูมได้ (อินเทอร์แอคทีฟ) ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;     // ความเฉื่อย
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = false;
+        controls.enableZoom = true;
+        controls.zoomSpeed = 1.2;
+        controls.target.set(0, 1.5, 0);
+        
+        // --- แสงสว่าง (ให้ตัวละครมีมิติ) ---
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.65);
+        scene.add(ambientLight);
+        
+        // Directional light (หลัก)
+        const mainLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
+        mainLight.position.set(5, 12, 4);
+        mainLight.castShadow = true;
+        mainLight.receiveShadow = true;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        mainLight.shadow.camera.near = 0.5;
+        mainLight.shadow.camera.far = 25;
+        mainLight.shadow.camera.left = -8;
+        mainLight.shadow.camera.right = 8;
+        mainLight.shadow.camera.top = 8;
+        mainLight.shadow.camera.bottom = -8;
+        scene.add(mainLight);
+        
+        // Fill light สีเหลืองนวล (ด้านหลัง)
+        const backLight = new THREE.PointLight(0xffaa66, 0.5);
+        backLight.position.set(-2, 3, -4);
+        scene.add(backLight);
+        
+        // แสงเสริมจากด้านล่าง (ความน่ารัก)
+        const fillLight = new THREE.PointLight(0x88aaff, 0.4);
+        fillLight.position.set(1, 2, 2);
+        scene.add(fillLight);
+        
+        // ริมขอบ (เพิ่มความสด)
+        const rimLight = new THREE.PointLight(0xffaa88, 0.55);
+        rimLight.position.set(3, 4, -5);
+        scene.add(rimLight);
+        
+        // --- พื้นโลก (สนามหญ้า) ---
+        const groundPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(28, 28),
+            new THREE.MeshStandardMaterial({ color: 0x8bc34a, roughness: 0.8, metalness: 0.1 })
+        );
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.position.y = -0.15;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+        
+        // เพิ่มลายตารางสวยงาม (GridHelper) 
+        const gridHelper = new THREE.GridHelper(30, 20, 0xd4e67a, 0xaacf5e);
+        gridHelper.position.y = -0.1;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.45;
+        scene.add(gridHelper);
+        
+        // --- องค์ประกอบตกแต่ง: ดอกไม้เล็ก ๆ และก้อนหินน่ารัก (เพื่อความมีชีวิตชีวา) ---
+        const flowerColors = [0xffa5c3, 0xffcc88, 0xc3e6ff, 0xf2b5ff];
+        for (let i = 0; i < 180; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 6 + Math.random() * 10;
+            const x = Math.cos(angle) * radius * (Math.random() - 0.5) * 1.5;
+            const z = Math.sin(angle) * radius * (Math.random() - 0.5) * 1.5;
+            if (Math.abs(x) < 3.5 && Math.abs(z) < 3.5) continue; // หลีกทางให้ตัวละครเดิน
+            
+            const stem = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.08, 0.1, 0.35, 4),
+                new THREE.MeshStandardMaterial({ color: 0x6b8e23 })
+            );
+            stem.position.set(x, -0.05, z);
+            stem.castShadow = true;
+            scene.add(stem);
+            
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(0.18, 8, 8),
+                new THREE.MeshStandardMaterial({ color: flowerColors[Math.floor(Math.random() * flowerColors.length)], emissive: 0x442200, emissiveIntensity: 0.1 })
+            );
+            head.position.set(x, 0.18, z);
+            head.castShadow = true;
+            scene.add(head);
+        }
+        
+        // หญ้าประดับเล็ก ๆ (เป็นแผง)
+        const grassBladeMat = new THREE.MeshStandardMaterial({ color: 0x66aa44 });
+        for (let i = 0; i < 300; i++) {
+            const x = (Math.random() - 0.5) * 24;
+            const z = (Math.random() - 0.5) * 22;
+            if (Math.hypot(x, z) < 2.5) continue;
+            const blade = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 3), grassBladeMat);
+            blade.position.set(x, -0.08, z);
+            blade.castShadow = true;
+            scene.add(blade);
+        }
+        
+        // --- สร้างตัวละครการ์ตูน 3D (เดินได้) ---
+        const characterGroup = new THREE.Group();
+        scene.add(characterGroup);
+        
+        // ส่วนประกอบต่างๆ
+        // ลำตัว (รูปทรงกระบอกน่ารัก)
+        const bodyGeo = new THREE.CylinderGeometry(0.65, 0.7, 1.1, 12);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffaa77, roughness: 0.3, metalness: 0.05 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        body.position.y = 0.45;
+        characterGroup.add(body);
+        
+        // เสื้อผ้า: สายเอี๊ยม (เล็กๆ)
+        const strapMat = new THREE.MeshStandardMaterial({ color: 0xdd8866 });
+        const strapLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.35, 0.15), strapMat);
+        strapLeft.position.set(-0.45, 0.55, 0.55);
+        strapLeft.castShadow = true;
+        characterGroup.add(strapLeft);
+        const strapRight = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.35, 0.15), strapMat);
+        strapRight.position.set(0.45, 0.55, 0.55);
+        strapRight.castShadow = true;
+        characterGroup.add(strapRight);
+        
+        // หัว (กลมโต)
+        const headGeo = new THREE.SphereGeometry(0.72, 32, 32);
+        const headMat = new THREE.MeshStandardMaterial({ color: 0xffc291, roughness: 0.2 });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.y = 1.1;
+        head.castShadow = true;
+        characterGroup.add(head);
+        
+        // หู (ซ้าย/ขวา)
+        const earMat = new THREE.MeshStandardMaterial({ color: 0xffaa77 });
+        const earLeft = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.6, 8), earMat);
+        earLeft.position.set(-0.65, 1.55, 0);
+        earLeft.castShadow = true;
+        characterGroup.add(earLeft);
+        const earRight = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.6, 8), earMat);
+        earRight.position.set(0.65, 1.55, 0);
+        earRight.castShadow = true;
+        characterGroup.add(earRight);
+        // ข้างในหูสีชมพู
+        const innerEarMat = new THREE.MeshStandardMaterial({ color: 0xffbbaa });
+        const innerLeft = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.4, 6), innerEarMat);
+        innerLeft.position.set(-0.65, 1.55, 0.08);
+        characterGroup.add(innerLeft);
+        const innerRight = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.4, 6), innerEarMat);
+        innerRight.position.set(0.65, 1.55, 0.08);
+        characterGroup.add(innerRight);
+        
+        // ดวงตา (ใหญ่โตแบบการ์ตูน)
+        const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const leftEyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 24), eyeWhiteMat);
+        leftEyeWhite.position.set(-0.28, 1.31, 0.72);
+        leftEyeWhite.castShadow = true;
+        characterGroup.add(leftEyeWhite);
+        const rightEyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 24), eyeWhiteMat);
+        rightEyeWhite.position.set(0.28, 1.31, 0.72);
+        rightEyeWhite.castShadow = true;
+        characterGroup.add(rightEyeWhite);
+        
+        // ม่านตา (ดำ)
+        const pupilMat = new THREE.MeshStandardMaterial({ color: 0x1a2c3e });
+        const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 24), pupilMat);
+        leftPupil.position.set(-0.28, 1.28, 0.94);
+        characterGroup.add(leftPupil);
+        const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.14, 24, 24), pupilMat);
+        rightPupil.position.set(0.28, 1.28, 0.94);
+        characterGroup.add(rightPupil);
+        
+        // ไฮไลท์ดวงตา (แสงจ้า)
+        const highlightMat = new THREE.MeshStandardMaterial({ color: 0xfafaff, emissive: 0xaaaaaa });
+        const leftHL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), highlightMat);
+        leftHL.position.set(-0.34, 1.36, 1.02);
+        characterGroup.add(leftHL);
+        const rightHL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), highlightMat);
+        rightHL.position.set(0.22, 1.36, 1.02);
+        characterGroup.add(rightHL);
+        
+        // จมูก (สามเหลี่ยมปุ้ม)
+        const noseMat = new THREE.MeshStandardMaterial({ color: 0xff8866 });
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.18, 8), noseMat);
+        nose.position.set(0, 1.0, 0.85);
+        nose.castShadow = true;
+        characterGroup.add(nose);
+        
+        // แก้มสีชมพู
+        const cheekMat = new THREE.MeshStandardMaterial({ color: 0xffaa99 });
+        const leftCheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), cheekMat);
+        leftCheek.position.set(-0.55, 0.95, 0.78);
+        characterGroup.add(leftCheek);
+        const rightCheek = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), cheekMat);
+        rightCheek.position.set(0.55, 0.95, 0.78);
+        characterGroup.add(rightCheek);
+        
+        // ปากยิ้ม (ใช้ torus หรือเส้นโค้ง แต่ใช้ cylinder ดัดแปลงดีกว่า: วงแหวนครึ่งวง)
+        const mouthCurve = new THREE.Mesh(
+            new THREE.TorusGeometry(0.22, 0.045, 12, 32, Math.PI),
+            new THREE.MeshStandardMaterial({ color: 0xcc7755 })
+        );
+        mouthCurve.rotation.x = 0.2;
+        mouthCurve.rotation.z = 0.1;
+        mouthCurve.position.set(0, 0.8, 0.93);
+        characterGroup.add(mouthCurve);
+        
+        // --- แขน (Left & Right) แบบกระบอกหมุนได้สำหรับแอนิเมชันเดิน---
+        const armMat = new THREE.MeshStandardMaterial({ color: 0xffaa77 });
+        const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.85, 8), armMat);
+        leftArm.position.set(-0.75, 0.9, 0);
+        leftArm.castShadow = true;
+        characterGroup.add(leftArm);
+        
+        const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.85, 8), armMat);
+        rightArm.position.set(0.75, 0.9, 0);
+        rightArm.castShadow = true;
+        characterGroup.add(rightArm);
+        
+        // มือน้อย (ทรงกลม)
+        const handMat = new THREE.MeshStandardMaterial({ color: 0xffaa88 });
+        const leftHand = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), handMat);
+        leftHand.position.set(-1.1, 0.5, 0);
+        leftHand.castShadow = true;
+        characterGroup.add(leftHand);
+        const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), handMat);
+        rightHand.position.set(1.1, 0.5, 0);
+        rightHand.castShadow = true;
+        characterGroup.add(rightHand);
+        
+        // ขา (ซ้าย/ขวา) สำหรับหมุนเดิน
+        const legMat = new THREE.MeshStandardMaterial({ color: 0xff9966 });
+        const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.75, 8), legMat);
+        leftLeg.position.set(-0.35, 0.05, 0);
+        leftLeg.castShadow = true;
+        characterGroup.add(leftLeg);
+        
+        const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.75, 8), legMat);
+        rightLeg.position.set(0.35, 0.05, 0);
+        rightLeg.castShadow = true;
+        characterGroup.add(rightLeg);
+        
+        // เท้า (ทำให้ดูสมดุล)
+        const footMat = new THREE.MeshStandardMaterial({ color: 0xcc8855 });
+        const leftFoot = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.15, 0.5), footMat);
+        leftFoot.position.set(-0.35, -0.28, 0.2);
+        leftFoot.castShadow = true;
+        characterGroup.add(leftFoot);
+        const rightFoot = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.15, 0.5), footMat);
+        rightFoot.position.set(0.35, -0.28, 0.2);
+        rightFoot.castShadow = true;
+        characterGroup.add(rightFoot);
+        
+        // หมวกเล็กๆ น่ารัก
+        const hatBase = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.0, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0xdd9955 }));
+        hatBase.position.set(0, 1.65, 0);
+        hatBase.castShadow = true;
+        characterGroup.add(hatBase);
+        const hatTop = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.55, 8), new THREE.MeshStandardMaterial({ color: 0xcc7744 }));
+        hatTop.position.set(0, 1.83, 0);
+        hatTop.castShadow = true;
+        characterGroup.add(hatTop);
+        
+        // เสริม: ดอกไม้ที่หมวก
+        const flowerHat = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), new THREE.MeshStandardMaterial({ color: 0xff88aa }));
+        flowerHat.position.set(0.4, 1.88, 0.45);
+        characterGroup.add(flowerHat);
+        
+        // CSS2D ชื่อตัวละครลอย
+        const nameDiv = document.createElement('div');
+        nameDiv.textContent = '🐣  เจ้าหนูน้อยเดินเที่ยว  🐣';
+        nameDiv.style.backgroundColor = 'rgba(255,215,150,0.85)';
+        nameDiv.style.padding = '4px 14px';
+        nameDiv.style.borderRadius = '30px';
+        nameDiv.style.fontSize = '16px';
+        nameDiv.style.fontWeight = 'bold';
+        nameDiv.style.color = '#5e2e1c';
+        nameDiv.style.fontFamily = "'Comic Neue', 'Segoe UI Emoji'";
+        nameDiv.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+        nameDiv.style.backdropFilter = 'blur(4px)';
+        const nameLabel = new CSS2DObject(nameDiv);
+        nameLabel.position.set(0, 2.2, 0);
+        characterGroup.add(nameLabel);
+        
+        // --- ระบบการเดิน (ตัวละครเคลื่อนที่อัตโนมัติ + หมุนแขนขา) ---
+        let walkDirection = 1; // 1 = ไปทางบวก Z, -1 = ทางลบ Z
+        let currentSpeed = 2.4; // หน่วยต่อวินาที
+        const walkRange = 11;    // เดินจาก z = -walkRange ถึง +walkRange
+        let characterPosZ = 0;
+        
+        // เก็บอ้างอิงส่วนที่ต้องหมุน
+        const armParts = { left: leftArm, right: rightArm };
+        const legParts = { left: leftLeg, right: rightLeg };
+        // มือตามแขน (ให้มือตาม position ของแขนล่ะ? แต่เพื่อความเรียบง่าย มือจะถูกขยับ relative กับแขนใน update ไม่ใช่)
+        // จริงๆ แล้วแขนและมือแยกกัน แต่ให้มือขยับตามแขนโดยตรง? เนื่องจากมือเป็นลูกของ characterGroup
+        // เราจะปรับ rotation ของแขน แล้วปรับตำแหน่งมือให้ปลายแขนตามไปด้วยแบบง่าย
+        
+        // ตัวแปรจับเวลาสำหรับแอนิเมชัน
+        let walkCycle = 0;
+        
+        // ฟังก์ชันอัปเดตการเดินและแอนิเมชัน
+        function updateWalking(deltaTime) {
+            if (!deltaTime || deltaTime > 0.033) deltaTime = 0.016;
+            
+            // เคลื่อนที่ตามทิศทาง
+            const step = currentSpeed * deltaTime * walkDirection;
+            let newZ = characterGroup.position.z + step;
+            
+            // ตรวจจับขอบเขตและกลับทิศ
+            if (newZ > walkRange) {
+                newZ = walkRange;
+                walkDirection = -1;
+                // พร้อมหมุนตัวละคร 180 องศา (หันไปทางเดิน)
+                characterGroup.rotation.y = Math.PI;
+            } else if (newZ < -walkRange) {
+                newZ = -walkRange;
+                walkDirection = 1;
+                characterGroup.rotation.y = 0;
+            }
+            characterGroup.position.z = newZ;
+            
+            // ปรับ rotation ของ characterGroup ตามทิศทาง (ถ้าทิศทางเปลี่ยนแล้ว set แล้ว)
+            // แต่ให้เปลี่ยน rotation.y แบบค่อยเป็นค่อยไปก็ดี แต่เพื่อความเรียบง่ายให้ทันที
+            if (walkDirection === 1) {
+                // เดินไปทาง +Z : หันหน้าไปทางแกน Z บวก (มุม 0)
+                characterGroup.rotation.y = 0;
+            } else {
+                // เดินไปทาง -Z : หันหลังกลับ (มุม PI)
+                characterGroup.rotation.y = Math.PI;
+            }
+            
+            // เพิ่ม bounce เล็กน้อยตามจังหวะก้าว
+            const bounceAmp = 0.035;
+            const bounceY = Math.sin(walkCycle * 8) * bounceAmp;
+            characterGroup.position.y = bounceY;
+            
+            // อัปเดตรอบแขนขา (walk cycle)
+            walkCycle += deltaTime * 7.2; // ความเร็วในการก้าว
+            const armAngle = Math.sin(walkCycle) * 0.95;   // เรเดียน ประมาณ 55 องศา
+            const legAngle = Math.sin(walkCycle) * 0.75;
+            
+            // แขน: แกว่งสวนทาง (ซ้ายกับขวาตรงข้าม)
+            armParts.left.rotation.x = armAngle * 0.7;
+            armParts.left.rotation.z = armAngle * 0.5;
+            armParts.right.rotation.x = -armAngle * 0.7;
+            armParts.right.rotation.z = -armAngle * 0.5;
+            
+            // ขา: แกว่งสลับ
+            legParts.left.rotation.x = legAngle;
+            legParts.right.rotation.x = -legAngle;
+            
+            // ปรับตำแหน่งมือให้ปลายแขน (คำนวณแบบง่าย โดยให้มือขยับไปกับปลายแขน)
+            // ใช้ local position ปรับ relative กับแขน (จริงๆ manual)
+            const leftArmEndX = -0.75 + Math.sin(armAngle * 0.7) * 0.35;
+            const leftArmEndY = 0.9 + Math.cos(armAngle * 0.7) * 0.4;
+            const leftArmEndZ = Math.sin(armAngle * 0.5) * 0.25;
+            leftHand.position.set(leftArmEndX - 0.25, leftArmEndY - 0.3, leftArmEndZ);
+            
+            const rightArmEndX = 0.75 + Math.sin(-armAngle * 0.7) * 0.35;
+            const rightArmEndY = 0.9 + Math.cos(-armAngle * 0.7) * 0.4;
+            const rightArmEndZ = Math.sin(-armAngle * 0.5) * 0.25;
+            rightHand.position.set(rightArmEndX + 0.25, rightArmEndY - 0.3, rightArmEndZ);
+            
+            // เพิ่มความขยับหูและหมวกแบบโยกตามจังหวะ
+            const earTilt = Math.sin(walkCycle * 8) * 0.05;
+            earLeft.rotation.z = earTilt;
+            earRight.rotation.z = -earTilt;
+            hatBase.rotation.z = earTilt * 0.5;
+            hatTop.rotation.z = earTilt * 0.5;
+            
+            // ตาและปากขยับเล็กน้อย (กระพริบตา? สุ่มแต่น่ารัก)
+            // ใส่การกระพริบตาเป็นระยะๆ (random)
+        }
+        
+        // เพิ่มเอฟเฟคการกระพริบตาเป็นระยะ (สุ่ม)
+        let blinkTimer = 0;
+        let isBlinking = false;
+        let blinkDuration = 0;
+        
+        function updateBlink(deltaTime) {
+            if (isBlinking) {
+                blinkDuration -= deltaTime;
+                if (blinkDuration <= 0) {
+                    isBlinking = false;
+                    // คืนขนาด pupil ปกติ
+                    leftPupil.scale.set(1, 1, 1);
+                    rightPupil.scale.set(1, 1, 1);
+                } else {
+                    // กระพริบตา: ทำให้ม่านตาหด (scale Y เล็ก)
+                    const scaleY = 0.1;
+                    leftPupil.scale.set(1, scaleY, 1);
+                    rightPupil.scale.set(1, scaleY, 1);
+                }
+            } else {
+                blinkTimer += deltaTime;
+                if (blinkTimer > 2.5 + Math.random() * 2) {
+                    blinkTimer = 0;
+                    isBlinking = true;
+                    blinkDuration = 0.12;
+                } else {
+                    leftPupil.scale.set(1, 1, 1);
+                    rightPupil.scale.set(1, 1, 1);
+                }
+            }
+        }
+        
+        // --- เพิ่มเมฆลอยฟ้าแบบ 3D (กลุ่มก้อนนุ่ม) ---
+        const cloudGroup = new THREE.Group();
+        scene.add(cloudGroup);
+        function createCloud(x, z, size) {
+            const cloud = new THREE.Group();
+            const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8f9fc, emissive: 0xccccdd, emissiveIntensity: 0.12 });
+            const geo1 = new THREE.SphereGeometry(size * 0.6, 7, 7);
+            const geo2 = new THREE.SphereGeometry(size * 0.5, 7, 7);
+            const geo3 = new THREE.SphereGeometry(size * 0.45, 7, 7);
+            const p1 = new THREE.Mesh(geo1, whiteMat);
+            p1.position.set(0, 0, 0);
+            const p2 = new THREE.Mesh(geo2, whiteMat);
+            p2.position.set(size * 0.55, -size*0.1, size*0.25);
+            const p3 = new THREE.Mesh(geo2, whiteMat);
+            p3.position.set(-size*0.5, -size*0.05, size*0.2);
+            const p4 = new THREE.Mesh(geo3, whiteMat);
+            p4.position.set(size*0.2, size*0.2, -size*0.3);
+            cloud.add(p1, p2, p3, p4);
+            cloud.position.set(x, 5.2 + Math.random() * 1.5, z);
+            return cloud;
+        }
+        const cloudsArray = [];
+        for (let i = 0; i < 12; i++) {
+            const x = (Math.random() - 0.5) * 35;
+            const z = (Math.random() - 0.5) * 20 - 5;
+            const sz = 0.65 + Math.random() * 0.5;
+            const cloudObj = createCloud(x, z, sz);
+            cloudGroup.add(cloudObj);
+            cloudsArray.push(cloudObj);
+        }
+        
+        // ลม: ให้เมฆค่อยๆ เคลื่อน
+        function updateClouds(deltaTime) {
+            cloudsArray.forEach(cloud => {
+                cloud.position.x += deltaTime * 0.45;
+                if (cloud.position.x > 20) cloud.position.x = -22;
+                if (cloud.position.x < -22) cloud.position.x = 20;
+            });
+        }
+        
+        // เพิ่มต้นไม้เล็ก ๆ เพิ่มความมีชีวิต
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0xbc9a6c });
+        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x7cb518 });
+        for (let i = 0; i < 45; i++) {
+            const angleRand = Math.random() * Math.PI * 2;
+            const radiusTree = 9 + Math.random() * 7;
+            const xTree = Math.cos(angleRand) * radiusTree;
+            const zTree = Math.sin(angleRand) * radiusTree;
+            if (Math.abs(xTree) < 3 && Math.abs(zTree) < 4) continue;
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 1.0, 5), trunkMat);
+            trunk.position.set(xTree, -0.1, zTree);
+            trunk.castShadow = true;
+            const foliage = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.0, 6), foliageMat);
+            foliage.position.set(xTree, 0.65, zTree);
+            foliage.castShadow = true;
+            scene.add(trunk, foliage);
+        }
+        
+        // --- เพิ่มเอฟเฟกต์อนุภาค (ผีเสื้อ/เกสร) รอบตัวละคร ---
+        const particleCount = 180;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            particlePositions[i*3] = (Math.random() - 0.5) * 12;
+            particlePositions[i*3+1] = Math.random() * 2.5;
+            particlePositions[i*3+2] = (Math.random() - 0.5) * 10;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        const particleMat = new THREE.PointsMaterial({ color: 0xffdd88, size: 0.08, transparent: true, opacity: 0.6 });
+        const particles = new THREE.Points(particlesGeometry, particleMat);
+        scene.add(particles);
+        
+        // --- Animation Loop ---
+        let lastTime = performance.now();
+        
+        function animate() {
+            const now = performance.now();
+            let delta = Math.min(0.033, (now - lastTime) / 1000);
+            if (delta <= 0) delta = 0.016;
+            lastTime = now;
+            
+            // อัปเดตการเดินตัวละคร
+            updateWalking(delta);
+            updateBlink(delta);
+            updateClouds(delta);
+            
+            // ให้อนุภาคติดตามตัวละครแบบน่ารัก
+            particles.position.x = characterGroup.position.x;
+            particles.position.z = characterGroup.position.z;
+            particles.position.y = 0.6;
+            
+            // หมุนอนุภาคช้าๆ
+            particles.rotation.y += 0.01;
+            
+            // ควบคุม CSS2D label ให้หันหน้ากล้องตลอด (โดย CSS2DRenderer ทำ automatic)
+            
+            // อัพเดต controls และ render
+            controls.update(); // อัปเดต Orbital
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // เริ่มต้นตำแหน่งตัวละคร
+        characterGroup.position.set(0, 0, 0);
+        characterGroup.rotation.y = 0;
+        walkDirection = 1;
+        
+        // เรียก animate
+        animate();
+        
+        // จัดการ resize หน้าจอ
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // ข้อความคอนโซล
+        console.log('✨ การ์ตูน 3D พร้อมเดินแล้ว! ✨');
+    </script>
+</body>
+</html>
